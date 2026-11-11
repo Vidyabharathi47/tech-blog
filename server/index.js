@@ -1,7 +1,7 @@
 
 const path = require('path');
 
-// Load environment variables from server/.env
+// Load local environment variables
 require('dotenv').config({
   path: path.join(__dirname, '.env')
 });
@@ -18,36 +18,49 @@ const authRoutes = require('./routes/authRoutes');
 const sitemapRoute = require('./routes/sitemapRoute');
 const authMiddleware = require('./middleware/authMiddleware');
 
-// CORS Configuration
-const corsOptions = {
-  origin: [
-    'http://localhost:5173',
-    'http://127.0.0.1:5173'
-  ],
+// CORS: Local frontend + deployed Vercel frontend
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://127.0.0.1:5173',
+  ...(process.env.CLIENT_URL || '')
+    .split(',')
+    .map(url => url.trim().replace(/\/$/, ''))
+    .filter(Boolean)
+];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests without an Origin header, such as curl
+    if (!origin || allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    return callback(new Error('Origin not allowed by CORS'));
+  },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
   optionsSuccessStatus: 204
-};
-
-// Enable CORS
-app.use(cors(corsOptions));
+}));
 
 // Parse JSON requests
 app.use(express.json());
 
-// API Routes
+// Health check
+app.get('/', (req, res) => {
+  res.status(200).json({
+    message: 'TechBlog API is running',
+    status: 'healthy'
+  });
+});
+
+// API routes
 app.use('/api/posts', postRoutes);
 app.use('/api/auth', authRoutes);
 
-// Dynamic Sitemap Route
+// Dynamic sitemap
 app.use('/', sitemapRoute);
 
-// Home Route
-app.get('/', (req, res) => {
-  res.send('TechBlog API is running');
-});
-
-// Protected Admin Profile Route
+// Protected admin profile
 app.get('/api/auth/profile', authMiddleware, (req, res) => {
   res.status(200).json({
     message: 'Access granted! Admin authenticated.',
@@ -55,12 +68,11 @@ app.get('/api/auth/profile', authMiddleware, (req, res) => {
   });
 });
 
-// Server Port
+// Server configuration
 const port = process.env.PORT || 5000;
 
-// Check MongoDB environment variable
 if (!process.env.MONGO_URI) {
-  console.error('MONGO_URI is missing from server/.env');
+  console.error('MONGO_URI is missing.');
   process.exit(1);
 }
 
@@ -69,11 +81,11 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('Connected to MongoDB');
 
-    app.listen(port, () => {
-      console.log(`Example app listening on port ${port}`);
+    app.listen(port, '0.0.0.0', () => {
+      console.log(`TechBlog server listening on port ${port}`);
     });
   })
   .catch((error) => {
-    console.error('Error connecting to MongoDB:', error);
+    console.error('MongoDB connection error:', error);
     process.exit(1);
   });
